@@ -166,7 +166,7 @@
     #betAmount {
       display: none;
     }
-    #pixButton, #addCreditButton {
+    #pixButton, #addCreditButton, #copyPixButton {
       margin-top: 8px;
       width: 100%;
       height: 35px;
@@ -179,7 +179,7 @@
       border-radius: 6px;
       transition: transform 0.2s;
     }
-    #pixButton:hover, #addCreditButton:hover {
+    #pixButton:hover, #addCreditButton:hover, #copyPixButton:hover {
       transform: scale(1.05);
     }
     #qrCodeContainer {
@@ -187,9 +187,17 @@
       margin-top: 10px;
       text-align: center;
     }
-    #qrCodeImage {
-      max-width: 200px;
-      margin: 0 auto;
+    #pixKeyInput {
+      width: 100%;
+      max-width: 320px;
+      margin: 5px auto;
+      padding: 5px;
+      background: #333;
+      color: white;
+      border: 1px solid #fff;
+      border-radius: 4px;
+      font-size: 12px;
+      word-break: break-all;
     }
     #paymentStatus {
       color: yellow;
@@ -232,7 +240,8 @@
     <label>Adicionar Créditos via PIX:</label>
     <button id="addCreditButton">Gerar PIX</button>
     <div id="qrCodeContainer">
-      <img id="qrCodeImage" src="" alt="QR Code PIX">
+      <input id="pixKeyInput" readonly value="" placeholder="Chave PIX será exibida aqui">
+      <button id="copyPixButton">Copiar Chave PIX</button>
       <div id="paymentStatus">Aguardando pagamento...</div>
     </div>
     <hr>
@@ -282,7 +291,8 @@
   const pixButton = document.getElementById('pixButton');
   const addCreditButton = document.getElementById('addCreditButton');
   const qrCodeContainer = document.getElementById('qrCodeContainer');
-  const qrCodeImage = document.getElementById('qrCodeImage');
+  const pixKeyInput = document.getElementById('pixKeyInput');
+  const copyPixButton = document.getElementById('copyPixButton');
   const paymentStatus = document.getElementById('paymentStatus');
   const backgroundSound = document.getElementById('backgroundSound');
   const clickSound = document.getElementById('clickSound');
@@ -326,7 +336,7 @@
 
   async function createPixPayment() {
     addCreditButton.disabled = true;
-    paymentStatus.textContent = 'Gerando QR Code...';
+    paymentStatus.textContent = 'Gerando Chave PIX...';
     qrCodeContainer.style.display = 'block';
 
     try {
@@ -335,8 +345,8 @@
 
       if (data.success) {
         currentPaymentId = data.paymentId;
-        qrCodeImage.src = `data:image/png;base64,${data.qrCodeBase64}`;
-        paymentStatus.textContent = 'Escaneie o QR Code para pagar R$18,00';
+        pixKeyInput.value = data.qrCodePix;
+        paymentStatus.textContent = 'Copie a Chave PIX para pagar R$18,00';
         checkPaymentStatus();
       } else {
         paymentStatus.textContent = `Erro: ${data.message}`;
@@ -370,6 +380,7 @@
         currentPaymentId = null;
         setTimeout(() => {
           qrCodeContainer.style.display = 'none';
+          pixKeyInput.value = '';
         }, 2000);
       } else if (data.success) {
         paymentStatus.textContent = `Aguardando pagamento... (${data.statusDetail})`;
@@ -383,6 +394,22 @@
       paymentStatus.textContent = 'Erro de conexão';
       addCreditButton.disabled = false;
       currentPaymentId = null;
+    }
+  }
+
+  function copyPixKey() {
+    pixKeyInput.select();
+    try {
+      document.execCommand('copy');
+      paymentStatus.textContent = 'Chave PIX copiada!';
+      clickSound.play().catch(() => {});
+      setTimeout(() => {
+        if (currentPaymentId) {
+          paymentStatus.textContent = 'Copie a Chave PIX para pagar R$18,00';
+        }
+      }, 2000);
+    } catch (error) {
+      paymentStatus.textContent = 'Erro ao copiar a chave';
     }
   }
 
@@ -424,6 +451,7 @@
   });
 
   addCreditButton.addEventListener('click', createPixPayment);
+  copyPixButton.addEventListener('click', copyPixKey);
 
   pixButton.addEventListener('click', () => {
     if (credits < 100) { // Mínimo de 100 créditos para saque (R$10)
