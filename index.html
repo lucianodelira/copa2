@@ -190,6 +190,10 @@
     #pixButton:hover {
       transform: scale(1.05);
     }
+    #pixButton:disabled {
+      background: grey;
+      cursor: not-allowed;
+    }
     #pixPaymentContainer {
       margin-top: 10px;
       background: #222;
@@ -435,13 +439,14 @@
         body: JSON.stringify({ action: 'resetCredits', userId: userId })
       });
       const data = await response.json();
+      console.log('Reset response:', data);
       if (!data.success) {
         console.error('Erro ao resetar créditos:', data.message);
         alert('Erro ao resetar o jogo. Tente novamente.');
       }
     } catch (error) {
-      console.error('Erro na requisição de reset:', error);
-      alert('Erro de conexão ao resetar o jogo. Verifique sua internet.');
+      console.error('Erro na requisição de reset:', error.message, error);
+      alert(`Erro de conexão ao resetar o jogo: ${error.message}. Verifique sua internet.`);
     }
     creditMenu.style.display = 'block';
     payerEmail.style.display = 'block';
@@ -469,17 +474,23 @@
     }
 
     pixPaymentContainer.innerHTML = '<p>Gerando Pix, aguarde...</p>';
+    pixButton.disabled = true;
     try {
       const response = await fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'generatePix', creditOption: selectedOption, userId: userId, payerEmail: email })
       });
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('Resposta do backend:', data);
       if (!data.success) {
         console.error('Erro ao gerar Pix:', data.message, data.details);
         pixPaymentContainer.innerHTML = '';
-        alert(data.message || 'Erro ao gerar pagamento');
+        alert(data.message || `Erro ao gerar pagamento: ${JSON.stringify(data.details)}. Verifique os logs.`);
+        pixButton.disabled = false;
         return;
       }
 
@@ -492,11 +503,13 @@
         <button onclick="copyPixKey()">Copiar Chave Pix</button>
         <p>Verificando pagamento...</p>
       `;
+      pixButton.disabled = false;
       checkPayment();
     } catch (error) {
-      console.error('Erro na requisição de Pix:', error);
+      console.error('Erro na requisição de Pix:', error.message, error);
       pixPaymentContainer.innerHTML = '';
-      alert('Erro de conexão ao gerar Pix. Verifique sua internet.');
+      alert(`Erro de conexão ao gerar Pix: ${error.message}. Verifique o console e sua conexão.`);
+      pixButton.disabled = false;
     }
   }
 
@@ -517,7 +530,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'verifyPayment', paymentId })
         });
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
         const data = await response.json();
+        console.log('Verificação de pagamento:', data);
         if (data.success && data.status === 'approved') {
           clearInterval(interval);
           pixPaymentContainer.innerHTML = '<p>Pagamento confirmado!</p>';
@@ -532,7 +549,7 @@
           console.error('Erro ao verificar pagamento:', data.message, data.details);
         }
       } catch (error) {
-        console.error('Erro na requisição de verificação:', error);
+        console.error('Erro na requisição de verificação:', error.message, error);
       }
     }, 5000);
   }
@@ -540,13 +557,17 @@
   async function fetchCredits() {
     try {
       const response = await fetch(`${SCRIPT_URL}?action=getCredits&userId=${userId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('Créditos recebidos:', data);
       if (!data.success) {
         console.error('Erro ao buscar créditos:', data.message);
       }
       return data.success ? data : { credits: "0", attempts: "0" };
     } catch (error) {
-      console.error('Erro na requisição de créditos:', error);
+      console.error('Erro na requisição de créditos:', error.message, error);
       return { credits: "0", attempts: "0" };
     }
   }
