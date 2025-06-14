@@ -249,7 +249,7 @@
     <div class="slot" style="grid-area:r1"><img src="imagens/mx.png" class="flag-img" data-team="mx"></div>
     <div class="slot" style="grid-area:r2"><img src="imagens/us.png" class="flag-img" data-team="us"></div>
     <div class="slot" style="grid-area:r3"><img src="imagens/co.png" class="flag-img" data-team="co"></div>
-    <div class="slot" style="grid-area:bl"><img src="imagens/jp.png" class="flag-img" data-team="jp"></div>
+    <div class="slot" style="gridAria:bl"><img src="imagens/jp.png" class="flag-img" data-team="jp"></div>
     <div class="slot" style="grid-area:b4"><img src="imagens/kr.png" class="flag-img" data-team="kr"></div>
     <div class="slot" style="grid-area:b3"><img src="imagens/ch.png" class="flag-img" data-team="ch"></div>
     <div class="slot" style="grid-area:b2"><img src="imagens/uy.png" class="flag-img" data-team="uy"></div>
@@ -398,60 +398,85 @@
 
   async function initiatePayment(amount, creditsToAdd) {
     try {
+      console.log('Initiating payment with amount:', amount, 'credits to add:', creditsToAdd);
       const response = await fetch(googleAppsScriptURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, action: 'createPayment' })
+        body: JSON.stringify({ amount, action: 'createPayment' }),
+        mode: 'cors',
+        credentials: 'omit'
       });
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
       const data = await response.json();
-      if (data.success && data.pixKey) {
+      console.log('Payment initiation response:', data);
+      if (data.success && data.pixKey && data.paymentId) {
         paymentId = data.paymentId;
         pixKeyInput.value = data.pixKey;
         pixKeyInput.style.display = 'block';
         copyPixKeyButton.style.display = 'block';
         gameLiberado.style.display = 'none';
         save();
-        alert('Chave Pix gerada! Copie a chave e realize o pagamento.');
+        alert('Chave Pix gerada! Copie a chave e realize o pagamento de R$5,00.');
         checkPaymentStatus(creditsToAdd);
       } else {
-        alert('Erro ao gerar a chave Pix. Tente novamente.');
+        console.error('Invalid response from server:', data);
+        alert(`Erro ao gerar a chave Pix: ${data.error || 'Resposta inválida do servidor'}.`);
       }
     } catch (error) {
-      alert('Erro na conexão com o servidor de pagamento. Verifique sua conexão e tente novamente.');
+      console.error('Payment initiation error:', error);
+      alert(`Erro na conexão com o servidor de pagamento: ${error.message}. Verifique sua conexão e tente novamente.`);
     }
   }
 
-  function checkPaymentStatus(creditsToAdd) {
+  async function checkPaymentStatus(creditsToAdd) {
+    try {
+      console.log('Checking payment status for paymentId:', paymentId);
+      const response = await fetch(googleAppsScriptURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentId, action: 'checkPayment' }),
+        mode: 'cors',
+        credentials: 'omit'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      const data = await response.json();
+      console.log('Payment status response:', data);
+      if (data.status === 'PAID') {
+        credits += creditsToAdd;
+        pixKeyInput.style.display = 'none';
+        copyPixKeyButton.style.display = 'none';
+        gameLiberado.style.display = 'block';
+        paymentId = null;
+        save();
+        updateDisplay();
+        alert(`Pagamento confirmado! ${creditsToAdd} créditos adicionados.`);
+        return true;
+      } else if (data.status === 'EXPIRED' || data.status === 'CANCELED') {
+        pixKeyInput.style.display = 'none';
+        copyPixKeyButton.style.display = 'none';
+        gameLiberado.style.display = 'none';
+        paymentId = null;
+        save();
+        alert('Pagamento expirado ou cancelado.');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Payment status check error:', error);
+      alert(`Erro ao verificar o status do pagamento: ${error.message}.`);
+      return true; // Stop checking on error
+    }
+  }
+
+  function startPaymentStatusCheck(creditsToAdd) {
     const interval = setInterval(async () => {
-      try {
-        const response = await fetch(googleAppsScriptURL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentId, action: 'checkPayment' })
-        });
-        const data = await response.json();
-        if (data.status === 'PAID') {
-          clearInterval(interval);
-          credits += creditsToAdd;
-          pixKeyInput.style.display = 'none';
-          copyPixKeyButton.style.display = 'none';
-          gameLiberado.style.display = 'block';
-          paymentId = null;
-          save();
-          updateDisplay();
-          alert(`Pagamento confirmado! ${creditsToAdd} créditos adicionados.`);
-        } else if (data.status === 'EXPIRED' || data.status === 'CANCELED') {
-          clearInterval(interval);
-          pixKeyInput.style.display = 'none';
-          copyPixKeyButton.style.display = 'none';
-          gameLiberado.style.display = 'none';
-          paymentId = null;
-          save();
-          alert('Pagamento expirado ou cancelado.');
-        }
-      } catch (error) {
+      const stop = await checkPaymentStatus(creditsToAdd);
+      if (stop) {
         clearInterval(interval);
-        alert('Erro ao verificar o status do pagamento.');
       }
     }, 10000);
   }
@@ -523,7 +548,7 @@
   };
 
   if (paymentId) {
-    checkPaymentStatus(5);
+    startPaymentStatusCheck(5);
   }
 
   updateDisplay();
