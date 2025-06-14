@@ -59,6 +59,7 @@
       align-items: center;
       width: 45px;
       height: 45px;
+      pointer-events: none;
     }
     .center-image {
       grid-area: btn;
@@ -125,6 +126,7 @@
       color: #fff;
       padding: 6px;
       border-radius: 6px;
+      display: none;
     }
     #teamButtons {
       display: flex;
@@ -132,6 +134,7 @@
       justify-content: center;
       gap: 4px;
       margin-top: 8px;
+      display: none;
     }
     .teamButton {
       width: 30px;
@@ -208,6 +211,58 @@
       padding: 5px;
       font-size: 12px;
     }
+    #creditMenu {
+      width: 100%;
+      margin: 8px 0;
+      padding: 5px;
+      background: #333;
+      color: white;
+      border: 1px solid #fff;
+      border-radius: 4px;
+    }
+    #resetButton {
+      margin-top: 8px;
+      width: 100%;
+      height: 35px;
+      background: #444;
+      border: 1px solid #fff;
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      display: none;
+    }
+    #gameStatus {
+      margin-top: 8px;
+      color: white;
+      font-size: 14px;
+    }
+    .painel {
+      margin-top: 10px;
+      background: #222;
+      padding: 10px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .saldo {
+      color: white;
+      font-size: 14px;
+    }
+    .btn-saque {
+      background: #00cc00;
+      border: 1px solid #fff;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-saque:hover {
+      transform: scale(1.05);
+    }
   </style>
 </head>
 <body>
@@ -241,9 +296,13 @@
   </div>
   <button id="btnPlay" disabled>JOGAR</button>
   <div id="menu">
-    <label>Adicionar Créditos via Pix:</label>
-    <input type="number" id="addCredit" placeholder="Valor em R$" min="1">
-    <button onclick="generatePixPayment()">Pagar com Pix</button>
+    <label>Escolher Pacote de Créditos:</label>
+    <select id="creditMenu">
+      <option value="option1" data-credits="10" data-attempts="3">R$10 - 10 Créditos, 3 Tentativas</option>
+      <option value="option2" data-credits="20" data-attempts="5">R$20 - 20 Créditos, 5 Tentativas</option>
+      <option value="option3" data-credits="50" data-attempts="10">R$50 - 50 Créditos, 10 Tentativas</option>
+    </select>
+    <button onclick="generatePixPayment()">Gerar Pix</button>
     <div id="pixPaymentContainer"></div>
     <hr>
     <label>Escolher Time:</label>
@@ -269,7 +328,12 @@
     </div>
     <input type="number" id="betAmount" placeholder="1-5" min="1" max="5">
     <div id="betList"></div>
-    <button id="pixButton">💸 Sacar via Pix</button>
+    <button id="resetButton">Reiniciar Jogo</button>
+    <div id="gameStatus"></div>
+  </div>
+  <div class="painel">
+    <div class="saldo">Saldo: R$ <span id="saldo">0</span></div>
+    <button class="btn-saque" onclick="mostrarMensagem()">💸 Solicitar Saque</button>
   </div>
   <!-- Elementos de áudio -->
   <audio id="backgroundSound" src="sons/background.mp3" loop autoplay></audio>
@@ -282,19 +346,25 @@
   // Initialize Mercado Pago
   const mp = new MercadoPago('SUA_PUBLIC_KEY_AQUI', { locale: 'pt-BR' });
 
-  let credits = 0; // Start with 0 credits
+  let credits = 0;
   let prize = parseInt(localStorage.getItem('prize')) || 0;
   let bets = {};
-  const userId = 'default_user'; // Replace with a unique player identifier if available
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyMA8AAb9fW331759a8La_zbpjx1i1eE5-MYSdrhDPo0MX5VYPzZ2laD6BP6is5wDz0Mw/exec'; // Replace with your Google Apps Script Web App URL
+  let attempts = 0;
+  let paymentId = null;
+  const userId = 'default_user';
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzx14c3vBzTMfJag5EoraiWeSYquV5-_TSDiLLSC2lnoduVPOVtk18llvkO03hhv_VewA/exec';
 
   const creditsEl = document.getElementById('credits');
   const prizeEl = document.getElementById('prize');
+  const saldoEl = document.getElementById('saldo');
   const btnPlay = document.getElementById('btnPlay');
   const slots = Array.from(document.querySelectorAll('.slot'));
   const betList = document.getElementById('betList');
   const teamButtons = document.querySelectorAll('.teamButton');
   const pixButton = document.getElementById('pixButton');
+  const creditMenu = document.getElementById('creditMenu');
+  const resetButton = document.getElementById('resetButton');
+  const gameStatus = document.getElementById('gameStatus');
   const backgroundSound = document.getElementById('backgroundSound');
   const clickSound = document.getElementById('clickSound');
   const spinSound = document.getElementById('spinSound');
@@ -312,7 +382,12 @@
   function updateDisplay() {
     creditsEl.textContent = credits;
     prizeEl.textContent = prize;
-    btnPlay.disabled = credits <= 0; // Disable JOGAR button if credits <= 0
+    saldoEl.textContent = prize;
+    btnPlay.disabled = credits <= 0 || attempts <= 0;
+    gameStatus.textContent = attempts > 0 ? `Tentativas restantes: ${attempts}` : 'Jogo finalizado. Escolha um novo pacote para continuar.';
+    betList.style.display = attempts > 0 ? 'block' : 'none';
+    teamButtons.forEach(btn => btn.style.display = attempts > 0 ? 'inline-block' : 'none');
+    resetButton.style.display = attempts <= 0 ? 'block' : 'none';
 
     betList.innerHTML = Object.entries(bets).map(([team, val]) => {
       return `
@@ -323,7 +398,6 @@
       `;
     }).join('');
 
-    // Add click event to bet items
     document.querySelectorAll('.bet-item').forEach(item => {
       item.addEventListener('click', () => {
         const team = item.dataset.team;
@@ -337,54 +411,131 @@
     localStorage.setItem('prize', prize);
   }
 
+  async function resetGame() {
+    credits = 0;
+    attempts = 0;
+    bets = {};
+    paymentId = null;
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resetCredits', userId: userId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Erro ao resetar créditos:', data.message);
+        alert('Erro ao resetar o jogo. Tente novamente.');
+      }
+    } catch (error) {
+      console.error('Erro na requisição de reset:', error);
+      alert('Erro de conexão ao resetar o jogo. Verifique sua internet.');
+    }
+    creditMenu.style.display = 'block';
+    pixButton.style.display = 'block';
+    document.getElementById('pixPaymentContainer').innerHTML = '';
+    gameStatus.textContent = 'Escolha um pacote de créditos para começar.';
+    betList.style.display = 'none';
+    teamButtons.forEach(btn => btn.style.display = 'none');
+    resetButton.style.display = 'none';
+    btnPlay.disabled = true;
+    slots.forEach(slot => slot.style.pointerEvents = 'none');
+    updateDisplay();
+  }
+
   async function generatePixPayment() {
-    const amount = parseFloat(document.getElementById('addCredit').value);
-    if (!amount || amount <= 0) {
-      alert('Insira um valor válido');
+    const selectedOption = creditMenu.value;
+    if (!selectedOption) {
+      alert('Selecione um pacote de créditos');
       return;
     }
 
-    // Call Google Apps Script to create payment
-    const response = await fetch(`${SCRIPT_URL}?action=createPayment&amount=${amount}&userId=${userId}`);
-    const data = await response.json();
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generatePix', creditOption: selectedOption, userId: userId })
+      });
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Erro ao gerar Pix:', data.message, data.details);
+        alert(data.message || 'Erro ao gerar pagamento');
+        return;
+      }
 
-    if (!data.success) {
-      alert(data.message || 'Erro ao criar pagamento');
-      return;
+      paymentId = data.paymentId;
+      const pixContainer = document.getElementById('pixPaymentContainer');
+      pixContainer.innerHTML = `
+        <p>Escaneie o QR Code para pagar:</p>
+        <img src="data:image/png;base64,${data.qrCodeBase64}" alt="QR Code Pix">
+        <p>Ou use o código Copia e Cola:</p>
+        <textarea readonly>${data.pixKey}</textarea>
+        <button onclick="copyPixKey()">Copiar Chave Pix</button>
+      `;
+      checkPayment();
+    } catch (error) {
+      console.error('Erro na requisição de Pix:', error);
+      alert('Erro de conexão ao gerar Pix. Verifique sua internet.');
     }
+  }
 
-    // Display QR Code and Copia e Cola code
-    const pixContainer = document.getElementById('pixPaymentContainer');
-    pixContainer.innerHTML = `
-      <p>Escaneie o QR Code para pagar:</p>
-      <img src="data:image/png;base64,${data.qrCodeBase64}" alt="QR Code Pix">
-      <p>Ou use o código Copia e Cola:</p>
-      <textarea readonly>${data.qrCodePix}</textarea>
-    `;
+  function copyPixKey() {
+    const pixKey = document.querySelector('#pixPaymentContainer textarea');
+    pixKey.select();
+    document.execCommand('copy');
+    alert('Chave Pix copiada!');
+  }
 
-    // Check payment status every 5 seconds
-    checkPaymentStatus(data.paymentId);
+  async function checkPayment() {
+    if (!paymentId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'verifyPayment', paymentId })
+        });
+        const data = await response.json();
+        if (data.success && data.status === 'approved') {
+          clearInterval(interval);
+          const creditsData = await fetchCredits();
+          credits = parseInt(creditsData.credits);
+          attempts = parseInt(creditsData.attempts);
+          save();
+          enableBoard();
+          alert('Pagamento confirmado! Jogo liberado.');
+          document.getElementById('pixPaymentContainer').innerHTML = '';
+        } else if (!data.success) {
+          console.error('Erro ao verificar pagamento:', data.message, data.details);
+        }
+      } catch (error) {
+        console.error('Erro na requisição de verificação:', error);
+      }
+    }, 5000);
   }
 
   async function fetchCredits() {
-    const response = await fetch(`${SCRIPT_URL}?action=getCredits&userId=${userId}`);
-    const data = await response.json();
-    return data.success ? data.credits : "0";
+    try {
+      const response = await fetch(`${SCRIPT_URL}?action=getCredits&userId=${userId}`);
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Erro ao buscar créditos:', data.message);
+      }
+      return data.success ? data : { credits: "0", attempts: "0" };
+    } catch (error) {
+      console.error('Erro na requisição de créditos:', error);
+      return { credits: "0", attempts: "0" };
+    }
   }
 
-  async function checkPaymentStatus(paymentId) {
-    const interval = setInterval(async () => {
-      const response = await fetch(`${SCRIPT_URL}?action=getPaymentStatus&paymentId=${paymentId}`);
-      const data = await response.json();
-      if (data.success && data.status === 'approved') {
-        clearInterval(interval);
-        credits = parseInt(await fetchCredits());
-        save();
-        updateDisplay();
-        alert('Pagamento confirmado! Créditos adicionados.');
-        document.getElementById('pixPaymentContainer').innerHTML = '';
-      }
-    }, 5000);
+  function enableBoard() {
+    slots.forEach(slot => slot.style.pointerEvents = 'auto');
+    creditMenu.style.display = 'none';
+    pixButton.style.display = 'none';
+    betList.style.display = 'block';
+    teamButtons.forEach(btn => btn.style.display = 'inline-block');
+    updateDisplay();
   }
 
   function placeBet(team = null, val = null) {
@@ -424,14 +575,16 @@
     });
   });
 
-  pixButton.addEventListener('click', () => {
+  function mostrarMensagem() {
     alert('Você não possui saldo para retirada');
-  });
+  }
 
   btnPlay.onclick = () => {
     if (credits <= 0) return alert('Adicione créditos para jogar');
+    if (attempts <= 0) return alert('Sem tentativas restantes. Escolha um novo pacote.');
     if (Object.keys(bets).length === 0) return alert('Nenhuma aposta feita');
     btnPlay.disabled = true;
+    attempts--;
     spinSound.play().catch(() => {});
     slots.forEach(s => s.classList.remove('blink'));
     let count = 0;
@@ -456,14 +609,22 @@
           loseSound.play().catch(() => {});
           alert('NÃO FOI DESSA VEZ');
         }
-        btnPlay.disabled = credits <= 0;
+        if (attempts <= 0) {
+          resetButton.style.display = 'block';
+          slots.forEach(slot => slot.style.pointerEvents = 'none');
+        }
+        btnPlay.disabled = credits <= 0 || attempts <= 0;
       }
     }, 100);
   };
 
-  // Load initial credits
-  fetchCredits().then(c => {
-    credits = parseInt(c);
+  resetButton.addEventListener('click', resetGame);
+
+  // Load initial state
+  fetchCredits().then(data => {
+    credits = parseInt(data.credits);
+    attempts = parseInt(data.attempts);
+    if (attempts > 0) enableBoard();
     updateDisplay();
   });
 </script>
