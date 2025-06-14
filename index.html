@@ -220,6 +220,15 @@
       border: 1px solid #fff;
       border-radius: 4px;
     }
+    #payerEmail {
+      width: 100%;
+      margin: 8px 0;
+      padding: 5px;
+      background: #333;
+      color: white;
+      border: 1px solid #fff;
+      border-radius: 4px;
+    }
     #resetButton {
       margin-top: 8px;
       width: 100%;
@@ -302,7 +311,8 @@
       <option value="option2" data-credits="20" data-attempts="5">R$20 - 20 Créditos, 5 Tentativas</option>
       <option value="option3" data-credits="50" data-attempts="10">R$50 - 50 Créditos, 10 Tentativas</option>
     </select>
-    <button onclick="generatePixPayment()">Gerar Pix</button>
+    <input type="email" id="payerEmail" placeholder="Seu e-mail">
+    <button id="pixButton" onclick="generatePixPayment()">Gerar Pix</button>
     <div id="pixPaymentContainer"></div>
     <hr>
     <label>Escolher Time:</label>
@@ -363,8 +373,10 @@
   const teamButtons = document.querySelectorAll('.teamButton');
   const pixButton = document.getElementById('pixButton');
   const creditMenu = document.getElementById('creditMenu');
+  const payerEmail = document.getElementById('payerEmail');
   const resetButton = document.getElementById('resetButton');
   const gameStatus = document.getElementById('gameStatus');
+  const pixPaymentContainer = document.getElementById('pixPaymentContainer');
   const backgroundSound = document.getElementById('backgroundSound');
   const clickSound = document.getElementById('clickSound');
   const spinSound = document.getElementById('spinSound');
@@ -432,8 +444,9 @@
       alert('Erro de conexão ao resetar o jogo. Verifique sua internet.');
     }
     creditMenu.style.display = 'block';
+    payerEmail.style.display = 'block';
     pixButton.style.display = 'block';
-    document.getElementById('pixPaymentContainer').innerHTML = '';
+    pixPaymentContainer.innerHTML = '';
     gameStatus.textContent = 'Escolha um pacote de créditos para começar.';
     betList.style.display = 'none';
     teamButtons.forEach(btn => btn.style.display = 'none');
@@ -445,36 +458,44 @@
 
   async function generatePixPayment() {
     const selectedOption = creditMenu.value;
+    const email = payerEmail.value;
     if (!selectedOption) {
       alert('Selecione um pacote de créditos');
       return;
     }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alert('Informe um e-mail válido');
+      return;
+    }
 
+    pixPaymentContainer.innerHTML = '<p>Gerando Pix, aguarde...</p>';
     try {
       const response = await fetch(SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generatePix', creditOption: selectedOption, userId: userId })
+        body: JSON.stringify({ action: 'generatePix', creditOption: selectedOption, userId: userId, payerEmail: email })
       });
       const data = await response.json();
       if (!data.success) {
         console.error('Erro ao gerar Pix:', data.message, data.details);
+        pixPaymentContainer.innerHTML = '';
         alert(data.message || 'Erro ao gerar pagamento');
         return;
       }
 
       paymentId = data.paymentId;
-      const pixContainer = document.getElementById('pixPaymentContainer');
-      pixContainer.innerHTML = `
+      pixPaymentContainer.innerHTML = `
         <p>Escaneie o QR Code para pagar:</p>
         <img src="data:image/png;base64,${data.qrCodeBase64}" alt="QR Code Pix">
         <p>Ou use o código Copia e Cola:</p>
         <textarea readonly>${data.pixKey}</textarea>
         <button onclick="copyPixKey()">Copiar Chave Pix</button>
+        <p>Verificando pagamento...</p>
       `;
       checkPayment();
     } catch (error) {
       console.error('Erro na requisição de Pix:', error);
+      pixPaymentContainer.innerHTML = '';
       alert('Erro de conexão ao gerar Pix. Verifique sua internet.');
     }
   }
@@ -499,13 +520,14 @@
         const data = await response.json();
         if (data.success && data.status === 'approved') {
           clearInterval(interval);
+          pixPaymentContainer.innerHTML = '<p>Pagamento confirmado!</p>';
           const creditsData = await fetchCredits();
           credits = parseInt(creditsData.credits);
           attempts = parseInt(creditsData.attempts);
           save();
           enableBoard();
           alert('Pagamento confirmado! Jogo liberado.');
-          document.getElementById('pixPaymentContainer').innerHTML = '';
+          pixPaymentContainer.innerHTML = '';
         } else if (!data.success) {
           console.error('Erro ao verificar pagamento:', data.message, data.details);
         }
@@ -532,6 +554,7 @@
   function enableBoard() {
     slots.forEach(slot => slot.style.pointerEvents = 'auto');
     creditMenu.style.display = 'none';
+    payerEmail.style.display = 'none';
     pixButton.style.display = 'none';
     betList.style.display = 'block';
     teamButtons.forEach(btn => btn.style.display = 'inline-block');
