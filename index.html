@@ -166,7 +166,7 @@
     #betAmount {
       display: none;
     }
-    #pixButton, #addCreditButton, #copyPixButton {
+    #pixButton {
       margin-top: 8px;
       width: 100%;
       height: 35px;
@@ -179,30 +179,54 @@
       border-radius: 6px;
       transition: transform 0.2s;
     }
-    #pixButton:hover, #addCreditButton:hover, #copyPixButton:hover {
+    #pixButton:hover {
       transform: scale(1.05);
     }
-    #qrCodeContainer {
-      display: none;
-      margin-top: 10px;
-      text-align: center;
+    #credit-menu {
+      margin-top: 8px;
+      background: #222;
+      padding: 8px;
+      border-radius: 6px;
     }
-    #pixKeyInput {
+    .credit-option {
       width: 100%;
-      max-width: 320px;
-      margin: 5px auto;
-      padding: 5px;
-      background: #333;
-      color: white;
+      height: 35px;
+      background: #007bff;
       border: 1px solid #fff;
-      border-radius: 4px;
-      font-size: 12px;
-      word-break: break-all;
+      color: white;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 4px 0;
+      transition: transform 0.2s;
     }
-    #paymentStatus {
-      color: yellow;
+    .credit-option:hover {
+      transform: scale(1.05);
+    }
+    #pix-key {
+      margin-top: 8px;
+      width: 100%;
+      padding: 8px;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+    #copy-pix-key {
+      margin-top: 4px;
+      width: 100%;
+      height: 30px;
+      background: #555;
+      border: 1px solid #fff;
+      color: white;
       font-size: 12px;
-      margin-top: 5px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #game-liberado {
+      display: none;
+      margin-top: 8px;
+      color: yellow;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -237,13 +261,11 @@
   </div>
   <button id="btnPlay">JOGAR</button>
   <div id="menu">
-    <label>Adicionar Créditos via PIX:</label>
-    <button id="addCreditButton">Gerar PIX</button>
-    <div id="qrCodeContainer">
-      <input id="pixKeyInput" readonly value="" placeholder="Chave PIX será exibida aqui">
-      <button id="copyPixButton">Copiar Chave PIX</button>
-      <div id="paymentStatus">Aguardando pagamento...</div>
+    <label>Adicionar Créditos:</label>
+    <div id="credit-menu">
+      <button class="credit-option" data-credits="5" data-amount="5">5 Reais = 5 Créditos</button>
     </div>
+    <input type="number" id="addCredit" placeholder="Qtd"> <button onclick="addCredits()">Adicionar</button>
     <hr>
     <label>Escolher Time:</label>
     <div id="teamButtons">
@@ -266,21 +288,25 @@
       <button class="teamButton" data-team="pe"><img src="imagens/pe.png" alt="Goiás"></button>
       <button class="teamButton" data-team="ca"><img src="imagens/ca.png" alt="Coritiba"></button>
     </div>
-    <input type="number" id="betAmount" placeholder="1-2" min="1" max="2">
+    <input type="number" id="betAmount" placeholder="1-5" min="1" max="5">
     <div id="betList"></div>
     <button id="pixButton">💸 Sacar via Pix</button>
+    <input type="text" id="pix-key" placeholder="Chave Pix" readonly style="display: none;">
+    <button id="copy-pix-key" style="display: none;">Copiar Chave Pix</button>
+    <div id="game-liberado" style="display: none;">Jogo Liberado!</div>
   </div>
-  <!-- Elementos de áudio -->
-  <audio id="backgroundSound" src="sons/background.mp3" loop></audio>
+  <audio id="backgroundSound" src="sons/background.mp3" loop autoplay></audio>
   <audio id="clickSound" src="sons/click.mp3"></audio>
   <audio id="spinSound" src="sons/spin.mp3"></audio>
   <audio id="winSound" src="sons/win.mp3"></audio>
+  <audio id="loseSound" src="sons/lose.mp3"></audio>
 </div>
 <script>
+  const googleAppsScriptURL = "https://script.google.com/macros/s/AKfycbzx14c3vBzTMfJag5EoraiWeSYquV5-_TSDiLLSC2lnoduVPOVtk18llvkO03hhv_VewA/exec";
   let credits = parseInt(localStorage.getItem('credits')) || 100;
   let prize = parseInt(localStorage.getItem('prize')) || 0;
   let bets = {};
-  let currentPaymentId = null;
+  let paymentId = localStorage.getItem('paymentId') || null;
 
   const creditsEl = document.getElementById('credits');
   const prizeEl = document.getElementById('prize');
@@ -289,20 +315,18 @@
   const betList = document.getElementById('betList');
   const teamButtons = document.querySelectorAll('.teamButton');
   const pixButton = document.getElementById('pixButton');
-  const addCreditButton = document.getElementById('addCreditButton');
-  const qrCodeContainer = document.getElementById('qrCodeContainer');
-  const pixKeyInput = document.getElementById('pixKeyInput');
-  const copyPixButton = document.getElementById('copyPixButton');
-  const paymentStatus = document.getElementById('paymentStatus');
+  const pixKeyInput = document.getElementById('pix-key');
+  const copyPixKeyButton = document.getElementById('copy-pix-key');
+  const gameLiberado = document.getElementById('game-liberado');
+  const creditMenu = document.getElementById('credit-menu');
   const backgroundSound = document.getElementById('backgroundSound');
   const clickSound = document.getElementById('clickSound');
   const spinSound = document.getElementById('spinSound');
   const winSound = document.getElementById('winSound');
+  const loseSound = document.getElementById('loseSound');
 
-  // Configura o volume da trilha de fundo
   backgroundSound.volume = 0.4;
 
-  // Inicia a trilha de fundo na primeira interação
   document.addEventListener('click', () => {
     backgroundSound.play().catch(() => {});
   }, { once: true });
@@ -315,12 +339,11 @@
       return `
         <div class="bet-item" data-team="${team}" style="display: inline-block; width: 40px; margin: 2px; background: #000; border: 1px solid #fff; border-radius: 4px; padding: 2px;">
           <img src="imagens/${team}.png" style="width: 100%; height: 24px; object-fit: contain;">
-          <div style="color: yellow; font-size: 12px;">${val}</div>
+          <div style="color: yellow; font-size: 10px;">${val}</div>
         </div>
       `;
     }).join('');
 
-    // Adiciona evento de clique aos itens de aposta
     document.querySelectorAll('.bet-item').forEach(item => {
       item.addEventListener('click', () => {
         const team = item.dataset.team;
@@ -332,84 +355,15 @@
   function save() {
     localStorage.setItem('credits', credits);
     localStorage.setItem('prize', prize);
+    localStorage.setItem('paymentId', paymentId);
   }
 
-  async function createPixPayment() {
-    addCreditButton.disabled = true;
-    paymentStatus.textContent = 'Gerando Chave PIX...';
-    qrCodeContainer.style.display = 'block';
-
-    try {
-      const response = await fetch('https://script.google.com/macros/s/AKfycbyMA8AAb9fW331759a8La_zbpjx1i1eE5-MYSdrhDPo0MX5VYPzZ2laD6BP6is5wDz0Mw/exec?action=createPayment');
-      const data = await response.json();
-
-      if (data.success) {
-        currentPaymentId = data.paymentId;
-        pixKeyInput.value = data.qrCodePix;
-        paymentStatus.textContent = 'Copie a Chave PIX para pagar R$18,00';
-        checkPaymentStatus();
-      } else {
-        paymentStatus.textContent = `Erro: ${data.message}`;
-        addCreditButton.disabled = false;
-        setTimeout(() => {
-          qrCodeContainer.style.display = 'none';
-        }, 2000);
-      }
-    } catch (error) {
-      paymentStatus.textContent = 'Erro de conexão';
-      addCreditButton.disabled = false;
-      setTimeout(() => {
-        qrCodeContainer.style.display = 'none';
-      }, 2000);
-    }
-  }
-
-  async function checkPaymentStatus() {
-    if (!currentPaymentId) return;
-
-    try {
-      const response = await fetch(`https://script.google.com/macros/s/AKfycbyMA8AAb9fW331759a8La_zbpjx1i1eE5-MYSdrhDPo0MX5VYPzZ2laD6BP6is5wDz0Mw/exec?action=getPaymentStatus&paymentId=${currentPaymentId}`);
-      const data = await response.json();
-
-      if (data.success && data.status === 'approved') {
-        credits += 180; // 10 créditos por real (R$18 = 180 créditos)
-        save();
-        updateDisplay();
-        paymentStatus.textContent = 'Pagamento confirmado! Créditos adicionados.';
-        addCreditButton.disabled = false;
-        currentPaymentId = null;
-        setTimeout(() => {
-          qrCodeContainer.style.display = 'none';
-          pixKeyInput.value = '';
-        }, 2000);
-      } else if (data.success) {
-        paymentStatus.textContent = `Aguardando pagamento... (${data.statusDetail})`;
-        setTimeout(checkPaymentStatus, 5000); // Verifica a cada 5 segundos
-      } else {
-        paymentStatus.textContent = `Erro: ${data.message}`;
-        addCreditButton.disabled = false;
-        currentPaymentId = null;
-      }
-    } catch (error) {
-      paymentStatus.textContent = 'Erro de conexão';
-      addCreditButton.disabled = false;
-      currentPaymentId = null;
-    }
-  }
-
-  function copyPixKey() {
-    pixKeyInput.select();
-    try {
-      document.execCommand('copy');
-      paymentStatus.textContent = 'Chave PIX copiada!';
-      clickSound.play().catch(() => {});
-      setTimeout(() => {
-        if (currentPaymentId) {
-          paymentStatus.textContent = 'Copie a Chave PIX para pagar R$18,00';
-        }
-      }, 2000);
-    } catch (error) {
-      paymentStatus.textContent = 'Erro ao copiar a chave';
+  function addCredits() {
+    let val = parseInt(document.getElementById('addCredit').value);
+    if (!isNaN(val) && val > 0) {
+      credits += val;
+      save();
+      updateDisplay();
     }
   }
 
@@ -442,25 +396,98 @@
     }
   }
 
+  async function initiatePayment(amount, creditsToAdd) {
+    try {
+      const response = await fetch(googleAppsScriptURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, action: 'createPayment' })
+      });
+      const data = await response.json();
+      if (data.success && data.pixKey) {
+        paymentId = data.paymentId;
+        pixKeyInput.value = data.pixKey;
+        pixKeyInput.style.display = 'block';
+        copyPixKeyButton.style.display = 'block';
+        gameLiberado.style.display = 'none';
+        save();
+        alert('Chave Pix gerada! Copie a chave e realize o pagamento.');
+        checkPaymentStatus(creditsToAdd);
+      } else {
+        alert('Erro ao gerar a chave Pix. Tente novamente.');
+      }
+    } catch (error) {
+      alert('Erro na conexão com o servidor de pagamento. Verifique sua conexão e tente novamente.');
+    }
+  }
+
+  function checkPaymentStatus(creditsToAdd) {
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(googleAppsScriptURL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentId, action: 'checkPayment' })
+        });
+        const data = await response.json();
+        if (data.status === 'PAID') {
+          clearInterval(interval);
+          credits += creditsToAdd;
+          pixKeyInput.style.display = 'none';
+          copyPixKeyButton.style.display = 'none';
+          gameLiberado.style.display = 'block';
+          paymentId = null;
+          save();
+          updateDisplay();
+          alert(`Pagamento confirmado! ${creditsToAdd} créditos adicionados.`);
+        } else if (data.status === 'EXPIRED' || data.status === 'CANCELED') {
+          clearInterval(interval);
+          pixKeyInput.style.display = 'none';
+          copyPixKeyButton.style.display = 'none';
+          gameLiberado.style.display = 'none';
+          paymentId = null;
+          save();
+          alert('Pagamento expirado ou cancelado.');
+        }
+      } catch (error) {
+        clearInterval(interval);
+        alert('Erro ao verificar o status do pagamento.');
+      }
+    }, 10000);
+  }
+
+  copyPixKeyButton.addEventListener('click', () => {
+    pixKeyInput.select();
+    navigator.clipboard.writeText(pixKeyInput.value).then(() => {
+      alert('Chave Pix copiada para a área de transferência!');
+    }).catch(() => {
+      alert('Erro ao copiar a chave Pix.');
+    });
+  });
+
+  creditMenu.addEventListener('click', (e) => {
+    if (e.target.classList.contains('credit-option')) {
+      const creditsToAdd = parseInt(e.target.dataset.credits);
+      const amount = parseFloat(e.target.dataset.amount);
+      initiatePayment(amount, creditsToAdd);
+      clickSound.play().catch(() => {});
+    }
+  });
+
+  pixButton.addEventListener('click', () => {
+    if (prize <= 0) {
+      alert('Você não possui saldo para retirada');
+    } else {
+      alert(`Solicitação de saque de ${prize} créditos. Entre em contato com o suporte para processar o pagamento via Pix.`);
+    }
+  });
+
   teamButtons.forEach(button => {
     button.addEventListener('click', () => {
       const team = button.dataset.team;
       const betValue = parseInt(document.getElementById('betAmount').value) || 1;
       placeBet(team, betValue);
     });
-  });
-
-  addCreditButton.addEventListener('click', createPixPayment);
-  copyPixButton.addEventListener('click', copyPixKey);
-
-  pixButton.addEventListener('click', () => {
-    if (credits < 100) { // Mínimo de 100 créditos para saque (R$10)
-      alert('Você precisa de pelo menos 100 créditos para sacar.');
-    } else {
-      alert('Saque solicitado! Entre em contato com o suporte para fornecer sua chave PIX.');
-      // Aqui, você precisaria implementar a lógica de saque via Mercado Pago,
-      // incluindo a coleta da chave PIX do usuário e envio ao servidor.
-    }
   });
 
   btnPlay.onclick = () => {
@@ -487,12 +514,17 @@
           winSound.play().catch(() => {});
           alert(`GANHOU ${win} CRÉDITOS!`);
         } else {
+          loseSound.play().catch(() => {});
           alert('NÃO FOI DESSA VEZ');
         }
         btnPlay.disabled = false;
       }
     }, 100);
   };
+
+  if (paymentId) {
+    checkPaymentStatus(5);
+  }
 
   updateDisplay();
 </script>
