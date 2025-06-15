@@ -222,6 +222,11 @@
       cursor: pointer;
       border-radius: 4px;
     }
+    #qr-code {
+      margin-top: 8px;
+      max-width: 150px;
+      display: none;
+    }
     #game-liberado {
       display: none;
       margin-top: 8px;
@@ -249,7 +254,7 @@
     <div class="slot" style="grid-area:r1"><img src="imagens/mx.png" class="flag-img" data-team="mx"></div>
     <div class="slot" style="grid-area:r2"><img src="imagens/us.png" class="flag-img" data-team="us"></div>
     <div class="slot" style="grid-area:r3"><img src="imagens/co.png" class="flag-img" data-team="co"></div>
-    <div class="slot" style="gridAria:bl"><img src="imagens/jp.png" class="flag-img" data-team="jp"></div>
+    <div class="slot" style="grid-area:bl"><img src="imagens/jp.png" class="flag-img" data-team="jp"></div>
     <div class="slot" style="grid-area:b4"><img src="imagens/kr.png" class="flag-img" data-team="kr"></div>
     <div class="slot" style="grid-area:b3"><img src="imagens/ch.png" class="flag-img" data-team="ch"></div>
     <div class="slot" style="grid-area:b2"><img src="imagens/uy.png" class="flag-img" data-team="uy"></div>
@@ -293,6 +298,7 @@
     <button id="pixButton">💸 Sacar via Pix</button>
     <input type="text" id="pix-key" placeholder="Chave Pix" readonly style="display: none;">
     <button id="copy-pix-key" style="display: none;">Copiar Chave Pix</button>
+    <img id="qr-code" src="" alt="QR Code Pix" style="display: none;">
     <div id="game-liberado" style="display: none;">Jogo Liberado!</div>
   </div>
   <audio id="backgroundSound" src="sons/background.mp3" loop autoplay></audio>
@@ -317,6 +323,7 @@
   const pixButton = document.getElementById('pixButton');
   const pixKeyInput = document.getElementById('pix-key');
   const copyPixKeyButton = document.getElementById('copy-pix-key');
+  const qrCodeImg = document.getElementById('qr-code');
   const gameLiberado = document.getElementById('game-liberado');
   const creditMenu = document.getElementById('credit-menu');
   const backgroundSound = document.getElementById('backgroundSound');
@@ -407,7 +414,8 @@
         credentials: 'omit'
       });
       if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! Status: ${response.status}, Response: ${errorText}`);
       }
       const data = await response.json();
       console.log('Payment initiation response:', data);
@@ -416,13 +424,15 @@
         pixKeyInput.value = data.pixKey;
         pixKeyInput.style.display = 'block';
         copyPixKeyButton.style.display = 'block';
+        qrCodeImg.src = 'data:image/png;base64,' + data.qrCodeBase64;
+        qrCodeImg.style.display = 'block';
         gameLiberado.style.display = 'none';
         save();
-        alert('Chave Pix gerada! Copie a chave e realize o pagamento de R$5,00.');
-        checkPaymentStatus(creditsToAdd);
+        alert('Chave Pix gerada! Copie a chave ou escaneie o QR code para realizar o pagamento de R$5,00.');
+        startPaymentStatusCheck(creditsToAdd);
       } else {
         console.error('Invalid response from server:', data);
-        alert(`Erro ao gerar a chave Pix: ${data.error || 'Resposta inválida do servidor'}.`);
+        alert(`Erro ao gerar a chave Pix: ${data.error || 'Resposta inválida do servidor'}. Detalhes: ${data.details || 'Sem detalhes'}`);
       }
     } catch (error) {
       console.error('Payment initiation error:', error);
@@ -441,27 +451,34 @@
         credentials: 'omit'
       });
       if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! Status: ${response.status}, Response: ${errorText}`);
       }
       const data = await response.json();
       console.log('Payment status response:', data);
-      if (data.status === 'PAID') {
+      if (data.success && data.status === 'PAID') {
         credits += creditsToAdd;
         pixKeyInput.style.display = 'none';
         copyPixKeyButton.style.display = 'none';
+        qrCodeImg.style.display = 'none';
         gameLiberado.style.display = 'block';
         paymentId = null;
         save();
         updateDisplay();
         alert(`Pagamento confirmado! ${creditsToAdd} créditos adicionados.`);
         return true;
-      } else if (data.status === 'EXPIRED' || data.status === 'CANCELED') {
+      } else if (data.success && (data.status === 'EXPIRED' || data.status === 'CANCELED')) {
         pixKeyInput.style.display = 'none';
         copyPixKeyButton.style.display = 'none';
+        qrCodeImg.style.display = 'none';
         gameLiberado.style.display = 'none';
         paymentId = null;
         save();
         alert('Pagamento expirado ou cancelado.');
+        return true;
+      } else if (!data.success) {
+        console.error('Payment status error:', data);
+        alert(`Erro ao verificar o status do pagamento: ${data.error || 'Resposta inválida'}. Detalhes: ${data.details || 'Sem detalhes'}`);
         return true;
       }
       return false;
